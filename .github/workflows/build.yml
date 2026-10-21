@@ -1,1 +1,28 @@
+name: Build Early Click Buffer
 
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download project
+        uses: actions/checkout@v4
+
+      - name: Build Android 64-bit mod
+        id: build
+        uses: geode-sdk/build-geode-mod@main
+        with:
+          target: Android64
+          sdk: latest
+
+      - name: Upload mod file
+        uses: actions/upload-artifact@v4
+        with:
+          name: Early-Click-Buffer-Android64
+          path: ${{ steps.build.outputs.build-output }}/*.geode
