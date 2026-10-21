@@ -4,8 +4,7 @@
 
 using namespace geode::prelude;
 
-// This mod delays button transitions by a configurable number of game-update
-// ticks. Presses and releases are queued together so their order is preserved.
+// Delays button transitions by a configurable number of game-update ticks.
 class $modify(EarlyClickBuffer, GJBaseGameLayer) {
     struct Fields {
         struct BufferedInput {
@@ -15,15 +14,13 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
             bool isPlayer1;
         };
 
-        std::deque<BufferedInput> m_fields->m_bufferedInputs;
-        int m_fields->m_inputTick = 0;
-        bool m_fields->m_replayingInput = false;
+        std::deque<BufferedInput> bufferedInputs;
+        int inputTick = 0;
+        bool replayingInput = false;
     };
 
     void handleButton(bool down, int button, bool isPlayer1) {
-        // Replayed inputs must reach the original handler instead of being
-        // queued again.
-        if (m_fields->m_replayingInput) {
+        if (m_fields->replayingInput) {
             GJBaseGameLayer::handleButton(down, button, isPlayer1);
             return;
         }
@@ -34,8 +31,8 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
             return;
         }
 
-        m_fields->m_bufferedInputs.push_back({
-            m_fields->m_inputTick + bufferTicks,
+        m_fields->bufferedInputs.push_back({
+            m_fields->inputTick + bufferTicks,
             down,
             button,
             isPlayer1
@@ -43,20 +40,20 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
     }
 
     void update(float dt) {
-        ++m_fields->m_inputTick;
+        ++m_fields->inputTick;
 
-        while (!m_fields->m_bufferedInputs.empty() &&
-               m_fields->m_bufferedInputs.front().dueTick <= m_fields->m_inputTick) {
-            auto input = m_fields->m_bufferedInputs.front();
-            m_fields->m_bufferedInputs.pop_front();
+        while (!m_fields->bufferedInputs.empty() &&
+               m_fields->bufferedInputs.front().dueTick <= m_fields->inputTick) {
+            auto input = m_fields->bufferedInputs.front();
+            m_fields->bufferedInputs.pop_front();
 
-            m_fields->m_replayingInput = true;
+            m_fields->replayingInput = true;
             GJBaseGameLayer::handleButton(
                 input.down,
                 input.button,
                 input.isPlayer1
             );
-            m_fields->m_replayingInput = false;
+            m_fields->replayingInput = false;
         }
 
         GJBaseGameLayer::update(dt);
