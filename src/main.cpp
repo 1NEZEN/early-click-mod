@@ -3,10 +3,9 @@
 
 using namespace geode::prelude;
 
-// Buffers jump presses only while the selected player is airborne.
-// If the player lands within the configured physics-tick window, the
-// press is replayed on landing. If the window expires first, the press
-// is passed through anyway, so an actually-too-early click is not erased.
+// Buffers airborne jump presses only for ground-jump modes. Continuous/flight
+// modes (Ship, UFO, Wave, Swing) must receive taps immediately or their
+// controls would be delayed until landing.
 class $modify(EarlyClickBuffer, GJBaseGameLayer) {
     struct Fields {
         struct PendingJump {
@@ -23,6 +22,17 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
         bool replayingInput = false;
     };
 
+    static bool supportsGroundJumpBuffer(PlayerObject* player) {
+        if (!player) return false;
+
+        // Cube is the default mode. Ball, Robot, and Spider also have
+        // ground-triggered actions. Do not delay continuous flight-mode taps.
+        return !player->m_isShip &&
+               !player->m_isBird &&
+               !player->m_isDart &&
+               !player->m_isSwing;
+    }
+
     void handleButton(bool down, int button, bool isPlayer1) {
         if (m_fields->replayingInput || button != 1) {
             GJBaseGameLayer::handleButton(down, button, isPlayer1);
@@ -32,15 +42,16 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
         auto& pending = m_fields->pending[isPlayer1 ? 0 : 1];
         auto* player = isPlayer1 ? m_player1 : m_player2;
 
-        // Keep a release paired with a press that is currently buffered.
+        // Pair a release with its buffered press.
         if (!down && pending.active) {
             pending.released = true;
             return;
         }
 
-        // Only buffer a fresh jump press when the player is airborne.
-        // All other inputs are handled immediately as normal.
-        if (down && player && !player->m_isOnGround && !pending.active) {
+        // Buffer only modes where a landing can trigger a ground action.
+        // All other modes receive their input immediately.
+        if (down && supportsGroundJumpBuffer(player) &&
+            !player->m_isOnGround && !pending.active) {
             int bufferTicks = Mod::get()->getSettingValue<int>("buffer-ticks");
             if (bufferTicks > 0) {
                 pending.active = true;
@@ -64,8 +75,8 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
             auto& pending = m_fields->pending[i];
             if (!pending.active) continue;
 
-            // Once the press is replayed, deliver its release on the
-            // following physics tick if the user already lifted.
+            // If the user already released, pair that release after replaying
+            // the press so a buffered tap does not become a held input.
             if (pending.releaseNextTick) {
                 m_fields->replayingInput = true;
                 GJBaseGameLayer::handleButton(false, pending.button, pending.isPlayer1);
@@ -78,7 +89,9 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
             bool landed = player && player->m_isOnGround;
             bool expired = m_fields->physicsTick >= pending.expiresAtTick;
 
-            if (landed || expired) {
+            // If the window expires first, still pass the click through;
+            // the mod never silently discards an early click.
+            if (landed || expired || !supportsGroundJumpBuffer(player)) {
                 m_fields->replayingInput = true;
                 GJBaseGameLayer::handleButton(true, pending.button, pending.isPlayer1);
                 m_fields->replayingInput = false;
