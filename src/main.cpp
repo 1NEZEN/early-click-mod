@@ -3,8 +3,7 @@
 
 using namespace geode::prelude;
 
-// Input is handled by GJBaseGameLayer in Geometry Dash 2.2081, so hook
-// that class directly. The buffer duration is a maximum window.
+// Buffer jump input in game modes where a discrete ground action is expected.
 class $modify(EarlyClickBuffer, GJBaseGameLayer) {
     struct Fields {
         struct PendingJump {
@@ -23,7 +22,6 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
 
     static bool supportsGroundJumpBuffer(PlayerObject* player) {
         if (!player) return false;
-        // Buffer ground-action modes, but don't delay continuous flight input.
         return !player->m_isShip &&
                !player->m_isBird &&
                !player->m_isDart &&
@@ -46,6 +44,13 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
         }
     }
 
+    void replayRelease(Fields::PendingJump& pending) {
+        m_fields->replayingInput = true;
+        GJBaseGameLayer::handleButton(false, pending.button, pending.isPlayer1);
+        m_fields->replayingInput = false;
+        pending = Fields::PendingJump{};
+    }
+
     void handleButton(bool down, int button, bool isPlayer1) {
         if (m_fields->replayingInput || button != 1) {
             GJBaseGameLayer::handleButton(down, button, isPlayer1);
@@ -55,7 +60,6 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
         auto& pending = m_fields->pending[isPlayer1 ? 0 : 1];
         auto* player = isPlayer1 ? m_player1 : m_player2;
 
-        // Preserve the release of a click that is currently buffered.
         if (!down && pending.active) {
             pending.released = true;
             return;
@@ -79,34 +83,50 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
     }
 
     void update(float dt) {
-        // Check before the game's update so the buffered press can be seen
-        // by this tick's physics, rather than waiting an extra tick.
         ++m_fields->physicsTick;
 
+        // Resolve anything already grounded, expired, or no longer eligible
+        // before the original update so the input can affect this update.
         for (int i = 0; i < 2; ++i) {
             auto& pending = m_fields->pending[i];
             if (!pending.active || pending.releaseNextTick) continue;
 
             auto* player = pending.isPlayer1 ? m_player1 : m_player2;
-            bool becamePassable = isGrounded(player);
+            bool grounded = isGrounded(player);
             bool expired = m_fields->physicsTick >= pending.expiresAtTick;
 
-            if (becamePassable || expired || !supportsGroundJumpBuffer(player)) {
+            if (grounded || expired || !supportsGroundJumpBuffer(player)) {
                 replayPress(pending);
             }
         }
 
+        // Only releases queued before this update are sent here. If the
+        // player lands during the original update, its buffered press is
+        // replayed below and gets one update before its paired release.
+        bool releaseWasQueued[2] = {
+            m_fields->pending[0].active && m_fields->pending[0].releaseNextTick,
+            m_fields->pending[1].active && m_fields->pending[1].releaseNextTick
+        };
+
         GJBaseGameLayer::update(dt);
 
-        // Pair the queued release after one physics update of the press.
+        // Landing can happen inside the original physics update. Check again
+        // afterward so we don't wait until the full buffer duration expires.
         for (int i = 0; i < 2; ++i) {
             auto& pending = m_fields->pending[i];
-            if (!pending.active || !pending.releaseNextTick) continue;
+            if (!pending.active || pending.releaseNextTick) continue;
 
-            m_fields->replayingInput = true;
-            GJBaseGameLayer::handleButton(false, pending.button, pending.isPlayer1);
-            m_fields->replayingInput = false;
-            pending = Fields::PendingJump{};
+            auto* player = pending.isPlayer1 ? m_player1 : m_player2;
+            if (isGrounded(player)) {
+                replayPress(pending);
+            }
+        }
+
+        for (int i = 0; i < 2; ++i) {
+            auto& pending = m_fields->pending[i];
+            if (releaseWasQueued[i] && pending.active && pending.releaseNextTick) {
+                replayRelease(pending);
+            }
         }
     }
 };
