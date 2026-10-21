@@ -38,7 +38,7 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
         return player && (player->m_isOnGround || player->m_isOnGround2);
     }
 
-    void replayPress(PendingJump& pending) {
+    void replayPress(Fields::PendingJump& pending) {
         m_fields->replayingInput = true;
         GJBaseGameLayer::handleButton(true, pending.button, pending.isPlayer1);
         m_fields->replayingInput = false;
