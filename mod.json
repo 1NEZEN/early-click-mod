@@ -7,6 +7,20 @@
   "name": "Early Click Buffer",
   "version": "v1.0.0",
   "developer": "EarlyClick",
-  "description": "Buffers early gameplay inputs for a short time.",
-  "tags": ["gameplay", "enhancement", "utility"]
+  "description": "Buffers early presses and releases using physics ticks.",
+  "tags": [
+    "gameplay",
+    "enhancement",
+    "utility"
+  ],
+  "settings": {
+    "buffer-ticks": {
+      "name": "Buffer Duration",
+      "description": "Maximum input buffer duration in physics ticks.",
+      "type": "int",
+      "default": 2,
+      "min": 1,
+      "max": 16
+    }
+  }
 }
