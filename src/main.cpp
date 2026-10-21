@@ -1,6 +1,6 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/GJBaseGameLayer.hpp>
-
+#include <deque>
 using namespace geode::prelude;
 
 class $modify(EarlyClickBuffer, GJBaseGameLayer) {
