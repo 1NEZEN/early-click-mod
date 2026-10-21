@@ -1,13 +1,11 @@
 #include <Geode/Geode.hpp>
-#include <Geode/modify/GJBaseGameLayer.hpp>
+#include <Geode/modify/PlayLayer.hpp>
 
 using namespace geode::prelude;
 
-// Buffers airborne jump presses for ground-action modes. The configured
-// duration is a maximum window, not a fixed delay: replay as soon as the
-// player becomes grounded, otherwise pass the input through when the window
-// expires.
-class $modify(EarlyClickBuffer, GJBaseGameLayer) {
+// Hook PlayLayer directly so gameplay input is intercepted at the layer
+// that receives actual player button presses.
+class $modify(EarlyClickBuffer, PlayLayer) {
     struct Fields {
         struct PendingJump {
             bool active = false;
@@ -25,7 +23,6 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
 
     static bool supportsGroundJumpBuffer(PlayerObject* player) {
         if (!player) return false;
-
         return !player->m_isShip &&
                !player->m_isBird &&
                !player->m_isDart &&
@@ -33,18 +30,15 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
     }
 
     static bool isGrounded(PlayerObject* player) {
-        // GD exposes two ground-state flags; either can indicate the
-        // first frame on which a buffered ground action can be accepted.
-        return player && (player->m_isOnGround || player->m_isOnGround2);
+        return player && player->m_isOnGround;
     }
 
     void replayPress(Fields::PendingJump& pending) {
         m_fields->replayingInput = true;
-        GJBaseGameLayer::handleButton(true, pending.button, pending.isPlayer1);
+        PlayLayer::handleButton(true, pending.button, pending.isPlayer1);
         m_fields->replayingInput = false;
 
         if (pending.released) {
-            // Keep the queued tap paired with its release.
             pending.releaseNextTick = true;
         } else {
             pending = Fields::PendingJump{};
@@ -53,7 +47,7 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
 
     void handleButton(bool down, int button, bool isPlayer1) {
         if (m_fields->replayingInput || button != 1) {
-            GJBaseGameLayer::handleButton(down, button, isPlayer1);
+            PlayLayer::handleButton(down, button, isPlayer1);
             return;
         }
 
@@ -79,11 +73,11 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
             }
         }
 
-        GJBaseGameLayer::handleButton(down, button, isPlayer1);
+        PlayLayer::handleButton(down, button, isPlayer1);
     }
 
     void update(float dt) {
-        GJBaseGameLayer::update(dt);
+        PlayLayer::update(dt);
         ++m_fields->physicsTick;
 
         for (int i = 0; i < 2; ++i) {
@@ -92,7 +86,7 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
 
             if (pending.releaseNextTick) {
                 m_fields->replayingInput = true;
-                GJBaseGameLayer::handleButton(false, pending.button, pending.isPlayer1);
+                PlayLayer::handleButton(false, pending.button, pending.isPlayer1);
                 m_fields->replayingInput = false;
                 pending = Fields::PendingJump{};
                 continue;
@@ -102,8 +96,6 @@ class $modify(EarlyClickBuffer, GJBaseGameLayer) {
             bool becamePassable = isGrounded(player);
             bool expired = m_fields->physicsTick >= pending.expiresAtTick;
 
-            // Release on the first valid grounded tick, not after the whole
-            // selected window. Expiry is only the fallback if it never lands.
             if (becamePassable || expired || !supportsGroundJumpBuffer(player)) {
                 replayPress(pending);
             }
